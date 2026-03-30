@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Dashboard</title>
+    <style>
+        :root {
+            --accent: #00ffcc;
+            --bg: #050505;
+            --panel: rgba(0, 10, 10, 0.96);
+            --border: rgba(0, 255, 204, 0.4);
+            --danger: #ff4b2b;
+            --success: #00ff66;
+            --gold: #ffcc00;
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; min-height: 100%;
+            background: var(--bg);
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: hidden;
+            overflow-y: auto; 
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent) transparent;
+        }
+
+        #particle-canvas { position: fixed; top: 0; left: 0; z-index: 1; }
+
+        /* SCREENS */
+        #clock-screen {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; 
+            z-index: 5;
+            transition: all 0.8s cubic-bezier(0.87, 0, 0.13, 1);
+            pointer-events: none;
+        }
+
+        #main-clock {
+            font-size: clamp(4rem, 15vw, 11rem); 
+            font-weight: 900; 
+            color: var(--accent);
+            text-shadow: 0 0 10px var(--accent), 0 0 30px var(--accent);
+            font-variant-numeric: tabular-nums;
+        }
+
+        #command-center {
+            position: relative;
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); 
+            gap: 40px;
+            padding: 80px 5% 150px 5%;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(50px);
+            transition: all 0.6s ease-out;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        body.hub-active #clock-screen { transform: translateY(-100%); opacity: 0; }
+        body.hub-active #command-center { transform: translateY(0); pointer-events: auto; opacity: 1; }
+
+        /* WIDGETS */
+        .widget {
+            background: var(--panel); 
+            backdrop-filter: blur(25px);
+            border: 2px solid var(--accent); 
+            border-radius: 20px;
+            padding: 30px; 
+            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            height: fit-content;
+        }
+
+        h3 { 
+            margin-top: 0; 
+            font-weight: 900; 
+            letter-spacing: 2px; 
+            text-transform: uppercase; 
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+            color: var(--accent);
+        }
+
+        #timer-input {
+            background: transparent; border: none;
+            font-size: clamp(3rem, 8vw, 6rem); 
+            color: var(--accent);
+            text-shadow: 0 0 20px var(--accent);
+            text-align: center; 
+            font-weight: 900;
+            width: 100%; outline: none;
+            font-family: inherit;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .nav-btn {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            z-index: 100; background: black; border: 2px solid var(--accent);
+            color: var(--accent); padding: 18px 45px; font-weight: 900;
+            letter-spacing: 2px; cursor: pointer; text-transform: uppercase;
+            box-shadow: 0 0 20px var(--accent); transition: 0.3s;
+            font-family: inherit;
+        }
+        .nav-btn:hover { background: var(--accent); color: black; box-shadow: 0 0 40px var(--accent); }
+
+        .action-btn {
+            background: transparent; border: 1px solid var(--accent);
+            color: var(--accent); padding: 12px 24px; cursor: pointer; font-weight: 900;
+            font-family: inherit; transition: 0.2s;
+        }
+        .action-btn:hover { background: var(--accent); color: black; }
+
+        #task-input {
+            width: 100%; background: rgba(0, 255, 204, 0.1); border: 1px solid var(--accent);
+            color: var(--accent); padding: 15px; margin-bottom: 20px; outline: none;
+            font-family: inherit; box-sizing: border-box; font-weight: 900;
+        }
+
+        .task-item {
+            background: rgba(0, 255, 204, 0.05); border: 1px solid var(--border);
+            padding: 15px; margin-bottom: 10px; display: flex;
+            justify-content: space-between; align-items: center;
+            font-weight: 900;
+        }
+        .task-item.completed { opacity: 0.3; filter: contrast(0.8); }
+        .task-item.completed span { text-decoration: line-through; }
+
+        /* BADGE MATRIX */
+        .badge-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .badge {
+            aspect-ratio: 1;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.55rem;
+            text-align: center;
+            padding: 2px;
+            opacity: 0.15;
+            filter: grayscale(1);
+            transition: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-weight: 900;
+        }
+        .badge.unlocked {
+            opacity: 1;
+            filter: grayscale(0);
+            border-color: var(--gold);
+            color: var(--gold);
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(255, 204, 0, 0.2);
+        }
+        .badge-icon { font-size: 1.2rem; margin-bottom: 3px; }
+
+        #finish-all-btn {
+            width: 100%; margin-top: 20px; border-color: var(--success); color: var(--success);
+            letter-spacing: 1px;
+        }
+        #finish-all-btn:hover { background: var(--success); color: black; box-shadow: 0 0 30px var(--success); }
+
+        #history-log {
+            font-size: 0.8rem; color: var(--accent); opacity: 0.7;
+            margin-top: 20px; border-top: 1px solid var(--border); padding-top: 15px;
+            max-height: 100px; overflow-y: auto; font-weight: 900;
+        }
+
+        #alert-overlay {
+            position: fixed; inset: 0; background: rgba(255, 75, 43, 0.4);
+            backdrop-filter: blur(15px); z-index: 200; display: none;
+            justify-content: center; align-items: center; flex-direction: column;
+            border: 15px solid var(--danger); animation: flash 0.5s infinite;
+        }
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+        h4 { margin: 25px 0 10px 0; color: var(--accent); font-size: 0.75rem; letter-spacing: 2px; opacity: 0.8; font-weight: 900; }
+    </style>
+</head>
+<body>
+
+    <canvas id="particle-canvas"></canvas>
+
+    <div id="alert-overlay">
+        <h1 style="font-size: clamp(3rem, 10vw, 6rem); color: white; font-weight: 900;">TIME IS UP!</h1>
+        <button class="nav-btn" style="position: static; transform: none; border-color: white; color: white;" onclick="closeAlert()">I'M BACK</button>
+    </div>
+
+    <button class="nav-btn" onclick="toggleHub()" id="mode-selector">OPEN DASHBOARD</button>
+
+    <main id="clock-screen">
+        <div id="main-clock">00:00:00</div>
+        <div style="letter-spacing: 10px; color: var(--accent); font-weight: 900; margin-top: 20px; opacity: 0.6;">SYSTEM READY</div>
+    </main>
+
+    <section id="command-center">
+        <article class="widget">
+            <h3>FOCUS TIMER</h3>
+            <input type="text" id="timer-input" value="25:00" onfocus="pauseOnEdit()" onblur="validateInput()">
+            <div style="display:flex; gap:15px; justify-content:center;">
+                <button class="action-btn" onclick="toggleTimer()" id="timer-btn">START</button>
+                <button class="action-btn" onclick="resetTimer()" style="border-color:var(--danger); color:var(--danger);">RESET</button>
+            </div>
+            <div id="history-log">Status: Waiting to start...</div>
+            <button class="action-btn" id="finish-all-btn" onclick="celebrateWorkload()">I'M DONE WITH ALL MY WORK!</button>
+        </article>
+
+        <article class="widget">
+            <h3>MY TO-DO LIST</h3>
+            <input type="text" id="task-input" placeholder="Type a new task and press Enter..." onkeypress="if(event.key==='Enter') addTask()">
+            <div id="task-list"></div>
+            <h4>COMPLETED TASKS</h4>
+            <div id="completed-list"></div>
+        </article>
+
+        <article class="widget">
+            <h3>ACHIEVEMENTS</h3>
+            <div style="font-size: 0.8rem; font-weight: 900; color: var(--accent); margin-bottom: 10px;">
+                SESSIONS DONE: <span id="stat-sessions">0</span> | TASKS FINISHED: <span id="stat-tasks">0</span>
+            </div>
+            <div class="badge-grid" id="badge-container">
+                </div>
+            <div id="achievement-log" style="font-size: 0.7rem; color: var(--gold); margin-top: 15px; font-weight: 900; height: 1em;"></div>
+        </article>
+    </section>
+
+    <script>
+        // --- 1. PARTICLE & CELEBRATION ENGINE ---
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [], mouse = { x: null, y: null };
+
+        window.addEventListener('mousemove', e => { mouse.x = e.x; mouse.y = e.y; });
+        window.addEventListener('resize', resize); 
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        resize();
+
+        class Particle {
+            constructor() { this.init(); }
+            init(isCelebration = false) {
+                this.x = Math.random() * canvas.width;
+                this.y = isCelebration ? canvas.height + 10 : Math.random() * canvas.height;
+                this.vx = (Math.random() - 0.5) * (isCelebration ? 12 : 1.2);
+                this.vy = isCelebration ? -Math.random() * 18 : (Math.random() - 0.5) * 1.2;
+                this.color = isCelebration ? `hsl(${Math.random()*360}, 100%, 60%)` : "rgba(0, 255, 204, 0.7)";
+                this.size = isCelebration ? Math.random() * 6 + 2 : 2;
+                this.gravity = isCelebration ? 0.25 : 0;
+                this.isCeleb = isCelebration;
+            }
+            update() {
+                this.vx *= 0.99;
+                this.vy += this.gravity;
+                this.x += this.vx; this.y += this.vy;
+                if (!this.isCeleb) {
+                    if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+                    if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+                }
+            }
+        }
+        for(let i=0; i<100; i++) particles.push(new Particle());
+
+        function celebrateWorkload() {
+            for(let i=0; i<150; i++) {
+                let p = new Particle();
+                p.init(true);
+                particles.push(p);
+            }
+            setTimeout(() => {
+                particles = particles.filter(p => !p.isCeleb);
+            }, 5000);
+        }
+
+        function animate() {
+            ctx.clearRect(0,0,canvas.width, canvas.height);
+            document.getElementById('main-clock').innerText = new Date().toLocaleTimeString('en-GB');
+
+            particles.forEach((p, i) => {
+                p.update();
+                ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+
+                if (!p.isCeleb) {
+                    let mDist = Math.hypot(p.x - mouse.x, p.y - mouse.y);
+                    if (mDist < 250) {
+                        ctx.strokeStyle = `rgba(0, 255, 204, ${1 - mDist/250})`;
+                        ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
+                    }
+                }
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // --- 2. BADGE DATA ---
+        const BADGE_DATA = [
+            { id: 'b1', icon: '⚡', name: 'STARTED', req: { tasks: 1 } },
+            { id: 'b2', icon: '🧠', name: 'FOCUSED', req: { sessions: 1 } },
+            { id: 'b3', icon: '⚔️', name: 'GRINDING', req: { tasks: 5 } },
+            { id: 'b4', icon: '🔋', name: 'CONSISTENT', req: { sessions: 3 } },
+            { id: 'b5', icon: '🔥', name: 'ON FIRE', req: { tasks: 10 } },
+            { id: 'b6', icon: '🛰️', name: 'LINKED', req: { sessions: 5 } },
+            { id: 'b7', icon: '💎', name: 'ELITE', req: { tasks: 20 } },
+            { id: 'b8', icon: '🌀', name: 'IN FLOW', req: { sessions: 10 } },
+            { id: 'b9', icon: '👑', name: 'MASTER', req: { tasks: 50 } },
+            { id: 'b10', icon: '🔮', name: 'EXPERT', req: { sessions: 25 } },
+            { id: 'b11', icon: '🌌', name: 'LEGEND', req: { tasks: 100 } },
+            { id: 'b12', icon: '☢️', name: 'GODLIKE', req: { sessions: 50 } }
+        ];
+
+        const container = document.getElementById('badge-container');
+        BADGE_DATA.forEach(b => {
+            const el = document.createElement('div');
+            el.className = 'badge'; el.id = b.id;
+            el.innerHTML = `<span class="badge-icon">${b.icon}</span>${b.name}`;
+            container.appendChild(el);
+        });
+
+        // --- 3. SYSTEM LOGIC ---
+        function toggleHub() {
+            const isActive = document.body.classList.toggle('hub-active');
+            document.getElementById('mode-selector').innerText = isActive ? "CLOSE DASHBOARD" : "OPEN DASHBOARD";
+        }
+
+        let timeLeft = 25 * 60;
+        let timerId = null;
+        const timerInput = document.getElementById('timer-input');
+
+        function updateTimerUI() { timerInput.value = `${Math.floor(timeLeft/60)}:${(timeLeft%60).toString().padStart(2,'0')}`; }
+        function pauseOnEdit() { if(timerId) toggleTimer(); }
+        function validateInput() { 
+            const p = timerInput.value.split(':'); 
+            timeLeft = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); 
+            updateTimerUI(); 
+        }
+
+        function toggleTimer() {
+            const btn = document.getElementById('timer-btn');
+            if(timerId) { clearInterval(timerId); timerId = null; btn.innerText = "RESUME"; }
+            else {
+                btn.innerText = "PAUSE";
+                timerId = setInterval(() => {
+                    if(timeLeft > 0) { timeLeft--; updateTimerUI(); }
+                    else {
+                        clearInterval(timerId); timerId = null;
+                        document.getElementById('alert-overlay').style.display = 'flex';
+                        logEvent(`Session finished at ${new Date().toLocaleTimeString()}`);
+                        let s = parseInt(localStorage.getItem('statSessions') || 0) + 1;
+                        localStorage.setItem('statSessions', s);
+                        checkAchievements();
+                    }
+                }, 1000);
+            }
+        }
+        function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25*60; updateTimerUI(); document.getElementById('timer-btn').innerText = "START"; }
+        function closeAlert() { document.getElementById('alert-overlay').style.display = 'none'; resetTimer(); }
+        function logEvent(msg) {
+            const entry = document.createElement('div');
+            entry.innerText = `> ${msg}`;
+            document.getElementById('history-log').prepend(entry);
+        }
+
+        function saveTasks() {
+            const tasks = [];
+            let completedCount = 0;
+            document.querySelectorAll('.task-item').forEach(item => {
+                const done = item.classList.contains('completed');
+                if(done) completedCount++;
+                tasks.push({ text: item.querySelector('span').innerText.replace('> ', ''), done: done });
+            });
+            localStorage.setItem('cyberTasks', JSON.stringify(tasks));
+            localStorage.setItem('statTasks', completedCount);
+            checkAchievements();
+        }
+
+        function checkAchievements() {
+            const sessions = parseInt(localStorage.getItem('statSessions') || 0);
+            const tasks = parseInt(localStorage.getItem('statTasks') || 0);
+            document.getElementById('stat-sessions').innerText = sessions;
+            document.getElementById('stat-tasks').innerText = tasks;
+
+            BADGE_DATA.forEach(b => {
+                const el = document.getElementById(b.id);
+                const meetSessions = !b.req.sessions || sessions >= b.req.sessions;
+                const meetTasks = !b.req.tasks || tasks >= b.req.tasks;
+                
+                if (meetSessions && meetTasks && !el.classList.contains('unlocked')) {
+                    el.classList.add('unlocked');
+                    document.getElementById('achievement-log').innerText = `> Achievement Unlocked: ${b.name}`;
+                }
+            });
+        }
+
+        function renderTask(text, isDone = false) {
+            const item = document.createElement('div');
+            item.className = `task-item ${isDone ? 'completed' : ''}`;
+            item.innerHTML = `
+                <span>> ${text}</span>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="toggleComplete(this)" style="background:transparent; border:none; color:var(--accent); cursor:pointer; font-weight:900;">[${isDone ? 'UNDO' : 'DONE'}]</button>
+                    <button onclick="this.parentElement.parentElement.remove(); saveTasks();" style="background:transparent; border:none; color:var(--danger); cursor:pointer; font-weight:900;">[DEL]</button>
+                </div>
+            `;
+            document.getElementById(isDone ? 'completed-list' : 'task-list').appendChild(item);
+        }
+
+        function addTask() {
+            const input = document.getElementById('task-input');
+            if(!input.value) return;
+            renderTask(input.value);
+            input.value = "";
+            saveTasks();
+        }
+
+        function toggleComplete(btn) {
+            const item = btn.parentElement.parentElement;
+            const text = item.querySelector('span').innerText.replace('> ', '');
+            const wasDone = item.classList.contains('completed');
+            item.remove();
+            renderTask(text, !wasDone);
+            saveTasks();
+        }
+
+        JSON.parse(localStorage.getItem('cyberTasks') || '[]').forEach(t => renderTask(t.text, t.done));
+        checkAchievements();
+    </script>
+</body>
+</html>
